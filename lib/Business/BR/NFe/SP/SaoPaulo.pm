@@ -2,10 +2,11 @@ package Business::BR::NFe::SP::SaoPaulo;
 use Crypt::OpenSSL::PKCS12;
 use Crypt::OpenSSL::X509;
 use Crypt::OpenSSL::RSA;
-use MIME::Base64 qw/base64_encode/;
+use MIME::Base64 qw/encode_base64/;
 use Digest::SHA1 qw/sha1_base64/;
 use Moose;
 use namespace::autoclean;
+use Carp;
 
 has cnpj => (
     is => 'ro',
@@ -108,6 +109,7 @@ sub create_keys {
     if ( $self->validate_certificate($cert) ) {
         # TODO
         # do I really need to create the files on disk?
+        # Renato cron: nao
         $self->_create_private_key( $pkcs12->private_key );
         $self->_create_public_key( $cert );
         $self->_create_key( $cert . $pkcs12->private_key );
@@ -164,7 +166,7 @@ sub _sign_content {
     my $rsa_priv = Crypt::OpenSSL::RSA->new_private_key($self->private_key);
     $rsa_priv->use_sha1_hash(); # it's the default, but let's be safe
 
-    return base64_encode( $rsa_priv->sign($content) );
+    return encode_base64( $rsa_priv->sign($content) );
 }
 
 sub get_xml_node_for_rps {
@@ -200,7 +202,7 @@ sub get_xml_node_for_rps {
 
     $node->appendChild( _el( 'ISSRetido', $rps->withheld_tax ? 'true' : 'false' ) );
 
-    $cnpj = _el( 'CPFCNPJTomador' );
+    my $cnpj = _el( 'CPFCNPJTomador' );
     $cnpj->appendChild( _el( 'CNPJ', $rps->contractor->cpf_cnpj ) );
     $node->appendChild( $cnpj );
 
@@ -223,7 +225,7 @@ sub set_xml_signature {
     my $signed_info = _el( 'SignedInfo' );
 
     my $canon = _el( 'CanonicalizationMethod' );
-    $canon->setAttribute( 'Algorithm', $this->url_canon_meth );
+    $canon->setAttribute( 'Algorithm', $self->url_canon_meth );
 
     my $sig_method = _el( 'SignatureMethod' );
     $sig_method->setAttribute( 'Algorithm', $self->url_sig_meth );
@@ -234,22 +236,23 @@ sub set_xml_signature {
     my $transforms = _el( 'Transforms' );
 
     my $transform1 = _el( 'Transform' );
-    $transform1->setAttribute( 'Algorithm', $this->url_transf_meth_1 );
+    $transform1->setAttribute( 'Algorithm', $self->url_transf_meth_1 );
 
     my $transform2 = _el( 'Transform' );
-    $transform2->setAttribute( 'Algorithm', $this->url_transf_meth_2 );
+    $transform2->setAttribute( 'Algorithm', $self->url_transf_meth_2 );
 
     my $digest_method = _el( 'DigestMethod' );
-    $digest_method->setAttribute( 'Algorithm', $this->url_digest_meth );
+    $digest_method->setAttribute( 'Algorithm', $self->url_digest_meth );
 
     my $digest_value_node = _el( 'DigestValue', $digest );
+
 
     $transforms->appendChild( $transform1 );
     $transforms->appendChild( $transform2 );
 
     $reference->appendChild( $transforms );
     $reference->appendChild( $digest_method );
-    $reference->appendChild( $digest_value );
+    $reference->appendChild( $digest_value_node );
 
     $signed_info->appendChild( $canon );
     $signed_info->appendChild( $sig_method );
@@ -259,8 +262,9 @@ sub set_xml_signature {
 
     $signature->appendChild( _el( 'SignatureValue', $self->_sign_content($signed_info->toStringC14N) ) );
 
-    $keyInfo  = _el('KeyInfo');
-    $x509Data = _el( 'X509Data' );
+    my $keyInfo  = _el('KeyInfo');
+    my $x509Data = _el( 'X509Data' );
+
     $x509Data->appendChild( _el( 'X509Certificate', $self->X509Certificate ) );
     $keyInfo->appendChild( $x509Data );
     $signature->appendChild( $keyInfo );
