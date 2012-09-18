@@ -71,6 +71,7 @@ has services_tax_rate => (
 # ISS retido
 has withheld_tax => (
     is => 'ro',
+    isa => 'Bool'
 );
 
 has contractor_RPS => (
